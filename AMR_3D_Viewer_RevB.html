@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AMR 3D Viewer</title>
+<style>
+:root{--bg:#eef1f5;--panel:#ffffff;--ink:#1f2937;--mute:#6b7280;--line:#e5e7eb;--acc:#f59e0b;--acc2:#111827}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:13px/1.4 "Helvetica Neue",Helvetica,Arial,sans-serif;overflow:hidden}
+#view{position:fixed;inset:0}
+#ui{position:fixed;left:12px;top:12px;bottom:12px;width:290px;background:var(--panel);border-radius:12px;box-shadow:0 6px 24px rgba(15,23,42,.12);display:flex;flex-direction:column;z-index:5}
+#ui header{padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+#ui header .band{height:6px;border-radius:3px;background:repeating-linear-gradient(45deg,#facc15 0 8px,#111 8px 16px);margin-bottom:10px}
+#ui h1{font-size:16px;margin:0}
+#ui header p{margin:2px 0 0;color:var(--mute);font-size:12px}
+#ui .scroll{overflow:auto;padding:6px 16px 16px;flex:1}
+#ui h2{font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--mute);margin:14px 0 6px}
+.row{display:flex;align-items:center;gap:8px;margin:4px 0}
+.row label{flex:1;cursor:pointer;display:flex;align-items:center;gap:8px}
+.sw{width:12px;height:12px;border-radius:3px;flex:none;border:1px solid rgba(0,0,0,.15)}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+button{font:inherit;font-size:12px;border:1px solid var(--line);background:#f9fafb;color:var(--ink);padding:5px 9px;border-radius:7px;cursor:pointer}
+button:hover{background:#f3f4f6;border-color:#d1d5db}
+button.on{background:var(--acc2);color:#fff;border-color:var(--acc2)}
+button.primary{background:var(--acc);border-color:var(--acc);color:#111;font-weight:600}
+input[type=range]{width:100%;accent-color:#111827}
+.rl{display:flex;justify-content:space-between;color:var(--mute);font-size:12px;margin-top:6px}
+select{font:inherit;width:100%;padding:5px;border-radius:7px;border:1px solid var(--line);background:#fff}
+#info{position:fixed;right:12px;top:12px;width:300px;background:var(--panel);border-radius:12px;box-shadow:0 6px 24px rgba(15,23,42,.12);padding:14px 16px;z-index:5}
+#info h3{margin:0 0 4px;font-size:14px}
+#info .grp{font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:1px}
+#info p{margin:6px 0 0;font-size:12.5px}
+#info .src{color:var(--mute);font-size:11.5px}
+#info .hint{color:var(--mute);font-size:12px}
+#stats{position:fixed;right:12px;bottom:12px;background:rgba(17,24,39,.88);color:#e5e7eb;border-radius:10px;padding:8px 12px;font-size:12px;z-index:5;display:flex;gap:14px;flex-wrap:wrap;max-width:calc(100% - 330px)}
+#stats b{color:#fff}
+#tip{position:fixed;pointer-events:none;background:#111827;color:#fff;padding:4px 8px;border-radius:6px;font-size:12px;display:none;z-index:9;white-space:nowrap}
+#err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--ink);z-index:20;background:var(--bg)}
+#toggleUI{display:none;position:fixed;left:12px;top:12px;z-index:6}
+@media (max-width:760px){
+ #ui{width:auto;right:12px;bottom:auto;max-height:55vh}
+ #ui.hidden{display:none}
+ #toggleUI{display:block;left:auto;right:12px}
+ #info{top:auto;bottom:56px;left:12px;right:12px;width:auto}
+ #stats{left:12px;right:12px;max-width:none}
+}
+</style>
+</head>
+<body>
+<div id="view"></div>
+<button id="toggleUI">Controls</button>
+<aside id="ui">
+ <header>
+  <div class="band"></div>
+  <h1>Indoor AMR, 30 kg class</h1>
+  <p>Rev B · 813 × 584 × 305 mm · parametric from the proposal</p>
+ </header>
+ <div class="scroll">
+  <h2>View</h2>
+  <div class="btns" id="views">
+   <button data-v="iso" class="on">Iso</button><button data-v="front">Front</button><button data-v="left">Left</button>
+   <button data-v="rear">Rear</button><button data-v="right">Right</button><button data-v="top">Top</button>
+  </div>
+  <div class="row" style="margin-top:8px"><label><input type="checkbox" id="section"> Section A–A (cut at x = 0)</label></div>
+  <div class="row"><label><input type="checkbox" id="dims"> Dimensions</label></div>
+  <div class="row"><label><input type="checkbox" id="eng"> Engineering colours</label></div>
+
+  <h2>Layers</h2>
+  <div id="layers"></div>
+
+  <h2>Explode</h2>
+  <input type="range" id="explode" min="0" max="1" step="0.01" value="0">
+  <h2>Shell opacity</h2>
+  <input type="range" id="opacity" min="0.05" max="1" step="0.01" value="1">
+
+  <h2>Steering angle <span id="steerVal" style="float:right;text-transform:none;letter-spacing:0">0°</span></h2>
+  <input type="range" id="steer" min="-90" max="90" step="1" value="0">
+
+  <h2>LiDAR</h2>
+  <div class="row"><label><input type="checkbox" id="scan" checked> Show scan plane (z = 213 mm)</label></div>
+
+  <h2>Light bars</h2>
+  <select id="state">
+   <option value="ready">Ready / idle</option><option value="forward">Driving forward</option>
+   <option value="left">Turning left</option><option value="right">Turning right</option>
+   <option value="docking">Reversing / docking</option><option value="charging">Charging</option>
+   <option value="obstacle">Obstacle slow-down</option><option value="estop">E-stop / fault</option><option value="low">Low battery</option>
+  </select>
+
+  <h2>Docking</h2>
+  <div class="btns"><button class="primary" id="dockBtn">Play docking</button><button id="undockBtn">Undock</button></div>
+  <p class="hint" style="color:var(--mute);font-size:12px;margin:8px 0 0">The rear camera tracks the ArUco marker. The robot reverses into the funnel, the dock pins seat, and the bars switch to charging.</p>
+ </div>
+</aside>
+<div id="info"><div class="grp">Inspect</div><h3>Hover or click a part</h3><p class="hint">Drag to orbit · right-drag to pan · scroll to zoom. Click any part for its size and the source of the number.</p></div>
+<div id="stats"></div>
+<div id="tip"></div>
+<div id="err"><div><h3>3D engine did not load</h3><p>This viewer loads three.js from cdn.jsdelivr.net. Open it with an internet connection.</p></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+if (!window.THREE || !THREE.OrbitControls) { document.getElementById('err').style.display = 'flex'; throw new Error('three.js missing'); }
+
+// ---------------------------------------------------------------- parameters (same as proposal_src/drawings.py)
+const P = {
+  SX: 406.5, SY: 292, CH_F: 93, CH_R: 63,           // shell
+  KX: 400, KY: 285, KCH_F: 90, KCH_R: 60,           // skeleton
+  GC: 40, Z_MID: 185, Z_BAND: 240, H: 305, TUBE: 25, SLOPE: 60,
+  LID_D: 76, LID_H: 41, LID_BASE: 18.6, LID_SCAN: 31, Z_LID: 182,
+  WHL_D: 100.7, WHL_W: 65.5, DRV_Y: 185, STP_Y: 55, STP_L: 51,
+  CAS_X: 260, CAS_Y: 175,
+  POSTS: [[297.5, 272.5], [297.5, -272.5], [-327.5, 272.5], [-327.5, -272.5]],
+  MIDX_X: 62, TOP_XF: 345, TOP_CH: 35,
+};
+P.Z_SCAN = P.Z_LID + P.LID_SCAN;
+
+// ---------------------------------------------------------------- renderer / scene
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.localClippingEnabled = true;
+view.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#eef1f5');
+scene.fog = new THREE.Fog('#eef1f5', 4000, 9000);
+const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 5, 20000);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 150, 0);
+controls.maxPolarAngle = Math.PI * 0.495;
+
+scene.add(new THREE.HemisphereLight('#ffffff', '#b9c0ca', 0.75));
+const sun = new THREE.DirectionalLight('#ffffff', 0.85);
+sun.position.set(900, 1800, 700);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -1300, right: 1300, top: 1300, bottom: -1300, near: 100, far: 5000 });
+scene.add(sun);
+const fill = new THREE.DirectionalLight('#dbeafe', 0.35); fill.position.set(-1200, 600, -900); scene.add(fill);
+
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(12000, 12000), new THREE.MeshStandardMaterial({ color: '#d9dee5', roughness: 1 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+const grid = new THREE.GridHelper(6000, 60, '#b8c0cc', '#c9d0d9'); grid.position.y = 0.5; scene.add(grid);
+// yellow floor line like the reference photos
+const lane = new THREE.Mesh(new THREE.PlaneGeometry(6000, 70), new THREE.MeshStandardMaterial({ color: '#facc15', roughness: .9 }));
+lane.rotation.x = -Math.PI / 2; lane.position.set(0, 1, -520); scene.add(lane);
+
+// robot frame (x fwd, y left, z up) -> three (X = x, Y = z, Z = -y)
+const world = new THREE.Group(); world.rotation.x = -Math.PI / 2; scene.add(world);
+const robot = new THREE.Group(); world.add(robot);
+const dockG = new THREE.Group(); world.add(dockG);
+
+// ---------------------------------------------------------------- colours & materials
+const REAL = { ms: '#454a52', shell: '#202429', plate: '#9aa3ad', deck: '#c7ccd2', buy: '#2f3640', prt: '#2a2e33', rubber: '#16181b', steel: '#b6bcc4', alu: '#c3c9d1', led: '#ffffff', brass: '#c9a227', pcbG: '#1f6f43', pcbB: '#1d4e89', red: '#d92626', yellow: '#facc15', bat: '#e0b400', dock: '#30353c' };
+const ENG = { ms: '#c2410c', shell: '#9ca3af', plate: '#cbd5e1', deck: '#cbd5e1', buy: '#3b82f6', prt: '#16a34a', rubber: '#3b82f6', steel: '#c2410c', alu: '#94a3b8', pcbG: '#3b82f6', pcbB: '#3b82f6', brass: '#eab308', red: '#ef4444', yellow: '#facc15', bat: '#3b82f6', dock: '#64748b' };
+const parts = [];
+const clipPlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0);
+let engMode = false;
+
+function M(key, opt = {}) {
+  const m = new THREE.MeshStandardMaterial(Object.assign({ color: REAL[key] || key, roughness: .6, metalness: .1, side: THREE.DoubleSide }, opt));
+  m.userData.key = key;
+  return m;
+}
+const LAYER = {};
+function layer(id, label, sw) { const g = new THREE.Group(); g.name = id; g.g = g; LAYER[id] = { g, label, sw }; return g; }
+
+function reg(mesh, g, info) {
+  if (mesh.material && !mesh.material.userData.noClone) mesh.material = mesh.material.clone();
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.userData.info = info;
+  g.add(mesh); parts.push(mesh);
+  return mesh;
+}
+// geometry helpers (robot frame)
+function box(x0, x1, y0, y1, z0, z1, mat, g, info) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0)), mat);
+  m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+  return reg(m, g, info);
+}
+function cyl(axis, cx, cy, cz, r, len, mat, g, info, seg = 40) {
+  const geo = new THREE.CylinderGeometry(r, r, len, seg);
+  if (axis === 'z') geo.rotateX(Math.PI / 2);
+  if (axis === 'x') geo.rotateZ(Math.PI / 2);
+  const m = new THREE.Mesh(geo, mat); m.position.set(cx, cy, cz);
+  return reg(m, g, info);
+}
+function shapeOf(pts) { const s = new THREE.Shape(); pts.forEach((p, i) => i ? s.lineTo(p[0], p[1]) : s.moveTo(p[0], p[1])); s.closePath(); return s; }
+function holeCircle(cx, cy, r) { const h = new THREE.Path(); h.absarc(cx, cy, r, 0, Math.PI * 2, true); return h; }
+function prism(pts, z0, z1, mat, g, info, holes = []) {
+  const s = shapeOf(pts); holes.forEach(h => s.holes.push(h));
+  const geo = new THREE.ExtrudeGeometry(s, { depth: z1 - z0, bevelEnabled: false, curveSegments: 40 });
+  geo.translate(0, 0, z0);
+  return reg(new THREE.Mesh(geo, mat), g, info);
+}
+function outline(hx, hy, cf, cr) {
+  return [[hx, hy - cf], [hx, -hy + cf], [hx - cf, -hy], [-hx + cr, -hy], [-hx, -hy + cr], [-hx, hy - cr], [-hx + cr, hy], [hx - cf, hy]];
+}
+function outlineXF(xf, xr, hy, cf, cr) {
+  return [[xf, hy - cf], [xf, -hy + cf], [xf - cf, -hy], [xr + cr, -hy], [xr, -hy + cr], [xr, hy - cr], [xr + cr, hy], [xf - cf, hy]];
+}
+function offsetPoly(pts, d) {           // inward offset of a convex polygon
+  const n = pts.length, cx = pts.reduce((a, p) => a + p[0], 0) / n, cy = pts.reduce((a, p) => a + p[1], 0) / n;
+  const lines = pts.map((p, i) => {
+    const q = pts[(i + 1) % n]; let nx = -(q[1] - p[1]), ny = q[0] - p[0]; const l = Math.hypot(nx, ny); nx /= l; ny /= l;
+    if ((cx - p[0]) * nx + (cy - p[1]) * ny < 0) { nx = -nx; ny = -ny; }
+    return { p: [p[0] + nx * d, p[1] + ny * d], d: [q[0] - p[0], q[1] - p[1]] };
+  });
+  return lines.map((L1, i) => {
+    const L0 = lines[(i - 1 + n) % n];
+    const den = L0.d[0] * L1.d[1] - L0.d[1] * L1.d[0];
+    const t = ((L1.p[0] - L0.p[0]) * L1.d[1] - (L1.p[1] - L0.p[1]) * L1.d[0]) / den;
+    return [L0.p[0] + L0.d[0] * t, L0.p[1] + L0.d[1] * t];
+  });
+}
+function tubeRing(outer, size, z0, mat, g, info) {
+  const c = offsetPoly(outer, size / 2);
+  c.forEach((p, i) => {
+    const q = c[(i + 1) % c.length], len = Math.hypot(q[0] - p[0], q[1] - p[1]) + size;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(len, size, size), mat);
+    m.position.set((p[0] + q[0]) / 2, (p[1] + q[1]) / 2, z0 + size / 2);
+    m.rotation.z = Math.atan2(q[1] - p[1], q[0] - p[0]);
+    reg(m, g, info);
+  });
+}
+function edgeBox(p, q, outward, thick, z0, z1, mat, g, info, proud = 0) {
+  // thin panel along edge p->q; sits inside the outline (or proud outside if proud > 0)
+  const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(len, thick, z1 - z0), mat);
+  const off = proud ? proud - thick / 2 : -thick / 2;
+  m.position.set((p[0] + q[0]) / 2 + outward[0] * off, (p[1] + q[1]) / 2 + outward[1] * off, (z0 + z1) / 2);
+  m.rotation.z = Math.atan2(q[1] - p[1], q[0] - p[0]);
+  return reg(m, g, info);
+}
+function outwardNormal(p, q) { let nx = q[1] - p[1], ny = -(q[0] - p[0]); const l = Math.hypot(nx, ny); nx /= l; ny /= l; const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2; if (mx * nx + my * ny < 0) { nx = -nx; ny = -ny; } return [nx, ny]; }
+function canvasTex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t; }
+function info(name, spec, src, status) { return { name, spec, src, status }; }
+
+// ---------------------------------------------------------------- layers
+const gSkel = layer('skel', 'MS skeleton', '#c2410c');
+const gShell = layer('shell', 'Outer shell + deck', '#202429');
+const gDrive = layer('drive', 'Drive modules', '#2563eb');
+const gCast = layer('cast', 'Casters', '#64748b');
+const gElec = layer('elec', 'Electronics + batteries', '#1f6f43');
+const gSens = layer('sens', 'Sensors + cameras', '#0ea5e9');
+const gPrt = layer('prt', '3D-printed parts', '#16a34a');
+const gLed = layer('led', 'Light bars', '#f59e0b');
+const gPlates = layer('plates', 'Base + mid plates', '#9aa3ad');
+Object.values(LAYER).forEach(L => robot.add(L.g));
+const gDock = layer('dock', 'Charging dock', '#30353c'); dockG.add(gDock);
+
+// explode sub-groups (robot frame translation only)
+const explodeItems = [];   // {obj, dir:[x,y,z], dist}
+function exGroup(parent, dir, dist) { const g = new THREE.Group(); parent.add(g); explodeItems.push({ obj: g, dir, dist }); return g; }
+
+// ================================================================= SKELETON
+const msMat = M('ms', { metalness: .35, roughness: .55 });
+const SK = 'MS skeleton';
+const skOuter = outline(P.KX, P.KY, P.KCH_F, P.KCH_R);
+tubeRing(skOuter, 25, 42, msMat, gSkel, info('Bottom ring', 'MS 25×25×1.5 square tube, z 42–67, chamfers 90 / 60 mm. Carries base plate, caster pockets, posts.', 'Proposal §4', 'design'));
+tubeRing(skOuter, 20, 165, msMat, gSkel, info('Mid ring', 'MS 20×20×1.5, z 165–185. Top edge of the lower shell; carries the mid plate.', 'Proposal §4', 'design'));
+const topOuter = outlineXF(P.TOP_XF, -P.KX, P.KY, P.TOP_CH, P.KCH_R);
+tubeRing(topOuter, 25, 278.5, msMat, gSkel, info('Top ring', 'MS 25×25×1.5, z 278.5–303.5. Front member at x = 345, behind the sloped face. Deck bolts here (8 × M5 CSK).', 'Proposal §4', 'design'));
+[-1, 1].forEach(s => {
+  box(s * 87.5, s * 112.5, -260, 260, 42, 67, msMat, gSkel, info('Bottom cross-member', 'MS 25×25×1.5 at x = ±100. Battery trays, guide-rod brackets, base plate.', 'Proposal §4', 'design'));
+  box(s * (P.MIDX_X - 10), s * (P.MIDX_X + 10), -265, 265, 165, 185, msMat, gSkel, info('Mid cross-member', 'MS 20×20×1.5 at x = ±62. LiDAR mount plate + guide-rod top clamps.', 'Proposal §4', 'design'));
+  box(s * 107.5, s * 132.5, -260, 260, 278.5, 303.5, msMat, gSkel, info('Deck cross tube', 'MS 25×25×1.5 under the deck, x = ±120. Stops the deck flexing.', 'Chassis tab #19', 'design'));
+});
+P.POSTS.forEach(([x, y]) => box(x - 12.5, x + 12.5, y - 12.5, y + 12.5, 42, 303.5, msMat, gSkel,
+  info('Corner post', 'MS 25×25×1.5, z 42–303.5, on the side rail where the chamfer starts. The only part crossing the LiDAR band (≈ 5° shadow). Cables run inside.', 'Proposal §2, §4', 'design')));
+// caster pockets
+[[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([sx, sy]) => {
+  const cx = sx * P.CAS_X, cy = sy * P.CAS_Y;
+  box(cx - 85, cx + 85, cy - sy * 85, sy * 280, 128, 133, msMat, gSkel, info('Caster pocket plate', '5 mm MS plate at z 128 (caster top-plate height). Machined flat, shim to level.', 'Proposal §4', 'design'));
+  [-70, 70].forEach(o => box(cx + o - 10, cx + o + 10, sy * 262, sy * 282, 67, 128, msMat, gSkel, info('Pocket leg', 'MS 20×20, pocket plate to bottom ring.', 'Proposal §4', 'design')));
+  box(sx * 112, cx - sx * 85, cy - sy * 70, cy - sy * 50, 113, 133, msMat, gSkel, info('Pocket strut', 'MS 20×20, pocket plate to cross-member.', 'Proposal §4', 'design'));
+  box(sx * 92, sx * 112, cy - sy * 70, cy - sy * 50, 67, 133, msMat, gSkel, info('Pocket strut post', 'MS 20×20 on the cross-member.', 'Proposal §4', 'design'));
+});
+// guide-rod bottom brackets
+[-1, 1].forEach(sy => box(-112, 112, sy * 108, sy * 132, 67, 72, msMat, gSkel, info('Guide-rod bottom bracket', '5 mm MS plate across both bottom cross-members, holds the Ø12 rod ends.', 'Proposal §3', 'design')));
+
+// ================================================================= PLATES
+const plateMat = M('plate', { metalness: .4, roughness: .5 });
+prism(skOuter, 40.5, 42, plateMat, gPlates, info('Base plate', '1.5 mm MS, 4 caster + 2 wheel openings. Underside at z = 40 (ground clearance).', 'Proposal §4', 'design'),
+  [holeCircle(P.CAS_X, P.CAS_Y, 90), holeCircle(P.CAS_X, -P.CAS_Y, 90), holeCircle(-P.CAS_X, P.CAS_Y, 90), holeCircle(-P.CAS_X, -P.CAS_Y, 90), holeCircle(0, P.DRV_Y, 70), holeCircle(0, -P.DRV_Y, 70)]);
+const midMat = M('alu', { metalness: .5, roughness: .4 });
+prism(offsetPoly(skOuter, 2), 185, 186.5, midMat, gPlates, info('Mid plate', '1.5 mm Al 5052 on the mid ring. Ø80 LiDAR hole, 2 pulley reliefs, grommets.', 'Proposal §4', 'design'),
+  [holeCircle(0, 0, 40), holeCircle(0, P.DRV_Y, 52), holeCircle(0, -P.DRV_Y, 52)]);
+box(-55, 55, -45, 45, 179, 182, midMat, gPlates, info('LiDAR mount plate', '3 mm Al under the mid-plate hole; puts the LiDAR base at z = 182 so the scan plane is at 213.', 'Slamtec fig. 5-1 + proposal §3', 'design'));
+
+// ================================================================= SHELL
+const shellMat = M('shell', { roughness: .75, metalness: .15 }); shellMat.userData.shell = true;
+const shOuter = outline(P.SX, P.SY, P.CH_F, P.CH_R);
+const panelGroups = [];
+shOuter.forEach((p, i) => {
+  const q = shOuter[(i + 1) % shOuter.length], n = outwardNormal(p, q);
+  const g = exGroup(gShell.g, [n[0], n[1], 0], 150);
+  edgeBox(p, q, n, 1.2, 40, 185, shellMat, g, info('Lower shell panel', '1.2 mm CRCA, laser-cut, bent, powder-coated matte black. M5 button-heads into rivet nuts in the skeleton.', 'Proposal §4', 'design'));
+  panelGroups.push(g);
+});
+const [pFront, pFR, pRight, pRR, pRear, pRL, pLeft, pFL] = panelGroups;
+// upper section (loft with front slope)
+const gUpper = exGroup(gShell.g, [0, 0, 1], 170);
+const upBot = outline(P.SX, P.SY, P.CH_F, P.CH_R);
+const upTop = outlineXF(P.SX - P.SLOPE, -P.SX, P.SY, P.TOP_CH + 1, P.CH_R);
+(function loft() {
+  const pos = [];
+  for (let i = 0; i < 8; i++) {
+    const j = (i + 1) % 8, a = upBot[i], b = upBot[j], c = upTop[j], d = upTop[i];
+    pos.push(a[0], a[1], P.Z_BAND, b[0], b[1], P.Z_BAND, c[0], c[1], 303.5, a[0], a[1], P.Z_BAND, c[0], c[1], 303.5, d[0], d[1], 303.5);
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.computeVertexNormals();
+  reg(new THREE.Mesh(geo, shellMat), gUpper, info('Upper shell', '1.2 mm CRCA skirt, z 240–305. Front face sloped ≈ 43° (60 mm set-back) for the camera and e-stop.', 'Proposal §4, §5', 'design'));
+})();
+prism(upBot, P.Z_BAND, P.Z_BAND + 1.2, shellMat, gUpper, info('Upper shell return flange', 'Folded 15 mm return along the bottom edge of the upper skirt.', 'Proposal §4', 'design'), [shapeOf(offsetPoly(upBot, 15).slice().reverse())]);
+const gDeck = exGroup(gShell.g, [0, 0, 1], 300);
+const deckMat = M('deck', { metalness: .6, roughness: .35 }); deckMat.userData.shell = true;
+prism(upTop, 303.5, 305, deckMat, gDeck, info('Top deck', '1.5 mm SS304, 20 mm lip, 8 × M5 countersunk into the top ring. Lifts off for service.', 'Proposal §4', 'design'));
+const matMat = M('rubber', { roughness: .95 }); matMat.userData.shell = true;
+prism(offsetPoly(upTop, 22), 305, 307, matMat, gDeck, info('Deck mat', 'Rubber anti-slip mat, 2 mm.', 'Chassis tab #14', 'design'));
+// deck logo ring
+const logo = new THREE.Mesh(new THREE.RingGeometry(55, 62, 64), M('#e5e7eb', { roughness: .5 })); logo.position.set(-20, 0, 307.2); reg(logo, gDeck, info('Deck marking', 'Printed / vinyl logo ring (cosmetic).', '—', 'design'));
+// hazard strips on the upper sides
+const hazTex = canvasTex(512, 32, (c, w, h) => { c.fillStyle = '#facc15'; c.fillRect(0, 0, w, h); c.fillStyle = '#111'; for (let x = -h; x < w + h; x += 32) { c.beginPath(); c.moveTo(x, h); c.lineTo(x + 16, h); c.lineTo(x + 16 + h, 0); c.lineTo(x + h, 0); c.fill(); } });
+[1, -1].forEach(s => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(500, 12), new THREE.MeshStandardMaterial({ map: hazTex, roughness: .7, side: THREE.DoubleSide }));
+  m.rotation.x = Math.PI / 2; m.position.set(-50, s * (P.SY + 0.6), 250);
+  reg(m, gUpper, info('Hazard strip', 'Black-yellow marking tape, upper side skirts.', 'Chassis tab #27', 'design'));
+});
+
+// ================================================================= DRIVE MODULES
+const steerGroups = [], wheelSpinners = [];
+const tyreTex = canvasTex(256, 64, (c, w, h) => { c.fillStyle = '#1b1d20'; c.fillRect(0, 0, w, h); c.fillStyle = '#2b2e33'; for (let x = 0; x < w; x += 16) c.fillRect(x, 0, 7, h); });
+tyreTex.wrapS = THREE.RepeatWrapping; tyreTex.repeat.set(3, 1);
+const rubber = M('rubber', { roughness: .9 });
+const steel = M('steel', { metalness: .7, roughness: .35 });
+const alu = M('alu', { metalness: .6, roughness: .35 });
+const buyMat = M('buy', { roughness: .5, metalness: .3 });
+const motorBlue = M('#2b6cb0', { roughness: .45, metalness: .3 });
+[1, -1].forEach(sy => {
+  const side = sy > 0 ? 'left' : 'right';
+  const steer = new THREE.Group(); steer.position.set(0, sy * P.DRV_Y, 0); gDrive.g.add(steer); steerGroups.push(steer);
+  // wheel (spins about local y)
+  const spin = new THREE.Group(); spin.position.set(0, 0, P.WHL_D / 2); steer.add(spin); wheelSpinners.push({ g: spin, sy });
+  const tyreGeo = new THREE.CylinderGeometry(P.WHL_D / 2, P.WHL_D / 2, 50, 48, 1, true);
+  const tyre = new THREE.Mesh(tyreGeo, new THREE.MeshStandardMaterial({ map: tyreTex, roughness: .9, side: THREE.DoubleSide }));
+  reg(tyre, spin, info(`M0601 hub motor (${side})`, 'DFRobot M0601: tyre Ø100.7 ±1.5, overall width 65.5, 18 V, 0.96 N·m rated / 2.0 N·m stall, 115 rpm, FOC + encoder, RS485. 765 g, 10 kg wheel load.', 'DFRobot dimension diagram; Waveshare DDSM115 for mass/load', 'ok'));
+  [-25, 25].forEach(o => { const d = new THREE.Mesh(new THREE.RingGeometry(34, P.WHL_D / 2, 48), rubber); d.rotation.x = Math.PI / 2; d.position.y = o; reg(d, spin, tyre.userData.info); });
+  cyl('y', 0, 0, 0, 34, 50.5, motorBlue, spin, tyre.userData.info);
+  cyl('y', 0, sy * 28.75, P.WHL_D / 2, 23, 7.5, alu, steer, info('M0601 hub cap', 'Outboard hub cap (rotating side).', 'DFRobot dimension diagram', 'ok'));
+  cyl('y', 0, -sy * 29, P.WHL_D / 2, 9.5, 8, steel, steer, info('M0601 stator boss', 'Ø19 boss with Ø15.2 D-pilot (6.5 flat), 3 × M2.5 × 5 deep. Only fixing point: single-sided mount. Cable (255 mm) exits here.', 'DFRobot dimension diagram', 'ok'));
+  // hanger + yoke + shaft + cartridge + pulley
+  box(-30, 30, -sy * 33, -sy * 39, 30, 112, msMat, steer, info('Wheel hanger', '6 mm MS plate bolted to the M0601 boss (3 × M2.5 10.9 + threadlocker), welded to the yoke.', 'Proposal §3, §13', 'design'));
+  box(-25, 25, -sy * 39, sy * 12, 106, 112, msMat, steer, info('Steering yoke', '6 mm MS, puts the Ø20 steering shaft on the tyre centreline (no scrub offset).', 'Proposal §3', 'design'));
+  cyl('z', 0, 0, 146.5, 10, 69, steel, steer, info('Steering shaft', 'Ø20 steel, z 112–181.', 'Proposal §3', 'design'));
+  cyl('z', 0, 0, 135, 21, 40, alu, steer, info('Bearing cartridge', '2 × 6004-2RS, 40 mm apart, welded tube; 51104 thrust under the yoke.', 'Proposal §3', 'design'));
+  cyl('z', 0, 0, 170, 48, 20, alu, steer, info('60T HTD-5M pulley', '15 mm belt, 4:1 with the 15T on the stepper, ≈ 2 N·m at the wheel.', 'Chassis tab #20', 'design'));
+  box(40, 50, -6, 6, 152, 159, M('red'), steer, info('Homing flag', 'Steel flag read by the LJ12A3-4 sensor to find straight-ahead at power-up.', 'Chassis tab #22', 'design'));
+  // carriage (does not steer)
+  const car = gDrive.g;
+  box(-75, 75, sy * 25, sy * 235, 130, 135, msMat, car, info('Suspension carriage', '5 mm MS plate on 2 × LM12UU, ±10 mm vertical travel, springs preloaded ≈ 80 N (≤ 10 kg wheel limit).', 'Proposal §3', 'design'));
+  [-62, 62].forEach(x => {
+    cyl('z', x, sy * 120, 126, 6, 118, steel, car, info('Guide rod Ø12', 'Hardened rod, bottom bracket (z 67) to mid cross-member (z 185).', 'Proposal §3', 'design'));
+    cyl('z', x, sy * 120, 137, 10.5, 24, alu, car, info('LM12UU bushing', 'Linear bearing in the carriage.', 'Proposal §3', 'design'));
+    const curve = new (class extends THREE.Curve { getPoint(t) { const a = t * Math.PI * 2 * 7; return new THREE.Vector3(x + 9 * Math.cos(a), sy * 120 + 9 * Math.sin(a), 149 + t * 16); } })();
+    reg(new THREE.Mesh(new THREE.TubeGeometry(curve, 160, 1.3, 6), steel), car, info('Suspension spring', 'Compression spring, carriage to mid cross-member.', 'Proposal §3', 'design'));
+  });
+  const sy_ = sy * P.STP_Y;
+  box(-28.5, 28.5, sy_ - 28.5, sy_ + 28.5, 155 - P.STP_L, 155, M('#2d3138', { metalness: .5, roughness: .4 }), car, info('NEMA 23 23HS5628', '57 × 57 × 51 mm body, Ø8 × 20.6 shaft, 650 g, 2.8 A (run at 2.0 A). Bolt pattern not listed: standard 47.14 sq / Ø38.1 pilot.', 'RoboticsBD #817', 'chk'));
+  box(-31, 31, sy_ - 31, sy_ + 31, 155, 160, steel, car, info('NEMA 23 L-bracket', 'Steel 50 × 62 × 64, Ø5 holes, slotted for belt tension.', 'RoboticsBD #1533', 'chk'));
+  box(-31, 31, sy_ + sy * 31, sy_ + sy * 35, 135, 160, steel, car, info('NEMA 23 L-bracket', 'Steel 50 × 62 × 64, Ø5 holes, slotted for belt tension.', 'RoboticsBD #1533', 'chk'));
+  cyl('z', 0, sy_, 170, 12, 20, alu, car, info('15T HTD-5M pulley', 'Ø8 bore on the stepper shaft.', 'Chassis tab #20', 'design'));
+  [-1, 1].forEach(s => {
+    const a = [s * 12, sy_], b = [s * 48, sy * P.DRV_Y], n = [0, 0];
+    edgeBox(a, b, [1, 0], 2, 163, 177, rubber, car, info('HTD-5M belt', '15 mm PU/steel-cord closed belt, 130 mm centres.', 'Chassis tab #20', 'design'));
+  });
+  cyl('x', 82, sy * P.DRV_Y, 155, 6, 60, M('#9aa3ad', { metalness: .6 }), car, info('LJ12A3-4-Z/BX homing sensor', 'M12 × ~60 inductive, NPN NO, 4 mm range, reads the pulley flag.', 'RoboticsBD #3208', 'ok'));
+});
+
+// ================================================================= CASTERS
+[[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([sx, sy]) => {
+  const g = new THREE.Group(); g.position.set(sx * P.CAS_X, sy * P.CAS_Y, 0); gCast.g.add(g);
+  const I = info('100 mm swivel caster', 'Low-profile PU swivel caster, Ø100 wheel, ≈ 128 mm plate height, plate mount. Replaces the 6 in / 5 in casters so the plate stays below the LiDAR band.', 'Proposal §1 (no link: measure on arrival)', 'meas');
+  box(-50, 50, -40, 40, 123, 128, steel, g, I);
+  cyl('z', 0, 0, 118, 30, 10, steel, g, I);
+  [-1, 1].forEach(s => box(-62, 8, s * 18, s * 22, 50, 113, steel, g, I));
+  box(-62, 8, -22, 22, 109, 113, steel, g, I);
+  cyl('y', -30, 0, 50, 50, 32, M('#c45c1a', { roughness: .8 }), g, I);
+  cyl('y', -30, 0, 50, 22, 34, alu, g, I);
+});
+
+// ================================================================= ELECTRONICS
+const pcbG = M('pcbG', { roughness: .6 }), pcbB = M('pcbB', { roughness: .6 }), blackBox = M('#24282e', { roughness: .6 });
+[1, -1].forEach(sx => {
+  box(sx * 112, sx * 192, -90, 90, 42, 45, M('prt'), gPrt, info('Battery tray', 'PETG tray, 180 × 80 bay with foam, 2 straps.', 'Proposal §2', 'design'));
+  box(sx * 128, sx * 176, -77, 77, 45, 85, M('bat', { roughness: .5 }), gElec, info('4S LiPo 4200 mAh', 'Wild Scorpion 14.8 V 4S. Size not published (page template unfilled): bay sized 180 × 80 × 75 to fit this or a 4S Li-ion pack. Measure on arrival.', 'electronics.com.bd', 'meas'));
+  [-45, 45].forEach(y => box(sx * 124, sx * 180, y - 10, y + 10, 84, 86, blackBox, gElec, info('LiPo strap', '20 × 2 cm nylon battery belt.', 'RoboticsBD #3070', 'ok')));
+});
+// front power bay
+[[8, 79], [-79, -8]].forEach(([y0, y1]) => {
+  box(212, 308, y0, y1, 42, 72, M('#1f2937', { metalness: .4 }), gElec, info('TB6600 stepper driver', 'Case size not listed (packed 100 × 80 × 40); drawn as the common 96 × 71 × 37. Set to 2.0 A, drop ENA when parked.', 'RoboticsBD #2419', 'meas'));
+  box(214, 306, y0 + 2, y1 - 2, 72, 79, alu, gElec, info('TB6600 heat sink', 'Integral aluminium fins.', 'RoboticsBD #2419', 'meas'));
+});
+box(320, 352, 35, 80, 42, 82, blackBox, gElec, info('E-stop contactor', '40 A DC contactor on the motor bus, switched by 2 × CR-257R in series. Logic stays powered.', 'Proposal §8 (new line)', 'design'));
+box(320, 352, -80, -35, 42, 70, M('#7f1d1d'), gElec, info('Main fuse block', '30 A main + 15 A charge fuse.', 'Proposal §8 (new line)', 'design'));
+// rear MCU bay
+box(-325.6, -224, -80, -26.7, 48, 49.6, pcbB, gElec, info('Arduino Mega 2560 R3', '101.6 × 53.3 (Arduino standard outline; store page lists no size). Reads sonars, bumpers, IMU, homing; drives steppers + LEDs.', 'RoboticsBD #9 / Arduino', 'chk'));
+box(-325.6, -305, -60, -45, 49.6, 60, M('#9ca3af', { metalness: .6 }), gElec, info('Arduino Mega USB-B', 'USB to the hub.', 'Arduino', 'chk'));
+box(-367, -222, 20, 85, 48, 49.1, M('#a7744a'), gElec, info('I/O veroboard', '145 × 65 × 1.1, 2.54 mm pitch. Sonar / step / LED breakout.', 'RoboticsBD #840', 'chk'));
+for (let i = 0; i < 3; i++) box(-366, -347.7, -78 + i * 16, -67.8 + i * 16, 48, 54.7, pcbG, gElec, info('5 V 3 A buck', '18.3 × 10.2 × 6.7 (page says both 2 A and 3 A). Logic / LEDs / hub.', 'RoboticsBD #1545', 'chk'));
+box(-366, -334, -28, -8, 48, 60, pcbG, gElec, info('5.1 V 5 A buck (Pi 5)', 'USB-C PD output, feeds the Pi 5. New BOM line.', 'Proposal §8', 'design'));
+box(-320, -265, -18, 12, 48, 63, M('#e5e7eb'), gElec, info('Powered USB 3 hub', '7-port, inside the rear bay: LiDAR, 2 webcams, RS485, Mega, audio, touch.', 'Proposal §1 (new line)', 'design'));
+box(-262, -202, -20, -2, 48, 60, blackBox, gElec, info('USB–RS485 adapter', '60 × 18 × 12, 20 g. Bus to both M0601 (IDs 1, 2), 120 Ω termination.', 'RoboticsBD #566', 'ok'));
+box(-255, -215, 2, 16, 48, 58, blackBox, gElec, info('USB audio + PAM8403', 'USB sound card + 3 W amp for the front speaker; mic input.', 'Proposal §1 (new line)', 'design'));
+box(-12.5, 12.5, -7.5, 7.5, 42, 45.5, M('#6d28d9'), gSens, info('MPU-9250 IMU', '25 × 15 × 3.5 (page also says 22 × 17). Centre of the base plate; gyro + accel only (magnetometer unreliable near the hubs).', 'RoboticsBD #680', 'chk'));
+// Raspberry Pi 5 (rear-left, ports facing the left wall)
+const piX0 = -158, piX1 = -102;
+box(piX0, piX1, 200, 285, 120, 121.6, pcbG, gElec, info('Raspberry Pi 5 8 GB', '85 × 56 board, Ø2.7 holes on 58 × 49, USB + Ethernet on the short edge (3 mm overhang) facing the left wall. 105 g. Needs 5 V 5 A.', 'Raspberry Pi mechanical drawing', 'ok'));
+box(piX0 + 1, piX0 + 22, 267, 288, 121.6, 137.6, M('#d1d5db', { metalness: .7 }), gElec, info('Pi 5 Ethernet', 'RJ45 on the port edge, reachable through the left service window.', 'Raspberry Pi drawing', 'ok'));
+box(piX0 + 24, piX1 - 1, 267, 288, 121.6, 137.6, M('#d1d5db', { metalness: .7 }), gElec, info('Pi 5 USB stack', '2 × USB 3 (turned back inside to the hub) + 2 × USB 2 (service).', 'Raspberry Pi drawing', 'ok'));
+box(-151.2, -108.7, 212, 256, 121.6, 135.3, M('#9ca3af', { metalness: .7, roughness: .3 }), gElec, info('Pi 5 Active Cooler', '63.5 × 42.5 footprint, 13.7 tall.', 'Raspberry Pi product brief', 'ok'));
+[-1, 1].forEach(a => [-1, 1].forEach(b => cyl('z', -130 + a * 24.5, 242.5 + b * 29, 81, 2.5, 78, steel, gElec, info('Pi standoff', 'M2.5 standoffs from the base plate.', '—', 'design'))));
+// display behind the right wall
+box(87, 173, -285, -280, 96, 152, pcbB, gElec, info('3.5 in HDMI touch LCD', 'Board ≈ 85 × 56, HDMI + USB touch, behind the right-wall bezel. New BOM line.', 'Proposal §1', 'design'));
+
+// ================================================================= SENSORS
+// LiDAR
+const lidG = new THREE.Group(); gSens.g.add(lidG);
+const LI = info('RPLIDAR A2M12', 'Ø76 × 41. Fixed base 18.6, rotor Ø72.5, scan plane at base + 31 (6 mm window), 4 × M3 ≤ 4 mm deep on R29.5. 190 g, 2.25–3 W, 0.2–12 m. Base at z 182 → scan plane at z 213.', 'Slamtec datasheet fig. 5-1', 'ok');
+cyl('z', 0, 0, P.Z_LID + P.LID_BASE / 2, P.LID_D / 2, P.LID_BASE, M('#2a2f36', { metalness: .3 }), lidG, LI, 64);
+const rotor = new THREE.Group(); rotor.position.set(0, 0, P.Z_LID + 19.6); lidG.add(rotor);
+cyl('z', 0, 0, (P.LID_H - 19.6) / 2, 36.25, P.LID_H - 19.6, M('#111418', { roughness: .3, metalness: .2 }), rotor, LI, 64);
+box(30, 37.5, -12, 12, P.LID_SCAN - 19.6 - 3, P.LID_SCAN - 19.6 + 3, M('#7f1d1d', { emissive: '#991b1b', emissiveIntensity: .6 }), rotor, LI);
+box(-37.5, -30, -9, 9, P.LID_SCAN - 19.6 - 3, P.LID_SCAN - 19.6 + 3, M('#334155', { roughness: .1 }), rotor, LI);
+// sonars: [x, y, z, axis-normal]
+const SON = info('HC-SR04 sonar', 'PCB 45 × 20, Ø16 transducers, 15° beam, in a 70 × 30 × 20 printed housing. Trigger one at a time.', 'RoboticsBD #22 / #2696', 'ok');
+function sonar(g, x, y, z, nx, ny) {
+  const along = [-ny, nx];
+  [-13, 13].forEach(o => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 12, 24), M('#c0c6ce', { metalness: .6 }));
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(nx, ny, 0));
+    m.position.set(x + along[0] * o + nx * 4, y + along[1] * o + ny * 4, z);
+    reg(m, g, SON);
+  });
+  const h = new THREE.Mesh(new THREE.BoxGeometry(70, 5, 30), M('prt'));
+  h.rotation.z = Math.atan2(along[1], along[0]); h.position.set(x + nx * 2.5, y + ny * 2.5, z);
+  reg(h, g, info('Sonar housing', 'Printed 70 × 30 × 20 housing / bezel.', 'RoboticsBD #2696', 'ok'));
+}
+[150, -150].forEach(y => { sonar(pFront, P.SX, y, 110, 1, 0); sonar(pRear, -P.SX, y, 110, -1, 0); });
+[250, -250].forEach(x => { sonar(pLeft, x, P.SY, 140, 0, 1); sonar(pRight, x, -P.SY, 140, 0, -1); });
+// cameras
+const camMat = M('#1b1e23', { roughness: .4 });
+function webcam(g, x, y, z, yaw, pitch, name) {
+  const c = new THREE.Group(); c.position.set(x, y, z); c.rotation.set(0, pitch, yaw); g.add(c);
+  const I = info(name, 'Rapoo C260 1080p, 97.5 g, FOV 80° or 95° (page conflicts). Body size not listed: measure, then finalise the printed housing.', 'StarTech', 'meas');
+  box(-18, 6, -32, 32, -13, 13, camMat, c, I);
+  cyl('x', 9, 0, 0, 7, 8, M('#0b0d10', { roughness: .1, metalness: .5 }), c, I);
+  cyl('x', 13.2, 0, 0, 4.5, 0.6, M('#1e3a8a', { roughness: .05, metalness: .9 }), c, I);
+  return c;
+}
+const slopeA = Math.atan2(P.SLOPE, 65);
+webcam(gUpper, 384, 0, 266, 0, 12 * Math.PI / 180, 'Front webcam');
+webcam(gUpper, -P.SX - 6, 0, 259, Math.PI, 0, 'Rear webcam (ArUco)');
+box(-P.SX - 4, -P.SX + 2, -34, 34, 244, 274, M('prt'), gUpper, info('Rear camera housing', 'PETG housing.', 'Proposal §4', 'design'));
+const camHousing = new THREE.Mesh(new THREE.BoxGeometry(14, 70, 36), M('prt')); camHousing.position.set(378, 0, 267); camHousing.rotation.y = -slopeA; reg(camHousing, gUpper, info('Front camera wedge housing', 'PETG, tilts the camera 10–15° down on the sloped face.', 'Proposal §4', 'design'));
+
+// ================================================================= PANEL FEATURES (e-stops, switches, display, ports, funnel)
+function estop(g, x, y, z, nx, nz, name) {
+  const I = info(name, 'CR-257R 5 A mushroom, head Ø39, neck Ø25 (panel hole ≈ Ø25). Both in series → contactor.', 'RoboticsBD #1889', 'chk');
+  const dir = new THREE.Vector3(nx, 0, nz).normalize();
+  const mk = (r, len, off, mat) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 40), mat); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir); m.position.set(x + dir.x * off, y, z + dir.z * off); reg(m, g, I); };
+  mk(25, 3, 1.5, M('yellow')); mk(12.5, 10, 6, M('#111')); mk(19.5, 14, 17, M('red', { roughness: .35 }));
+}
+estop(gUpper, 378, -160, 270, Math.cos(slopeA), Math.sin(slopeA), 'E-stop #1 (front-right)');
+const rearE = new THREE.Group(); gUpper.add(rearE);
+(function () { const I = info('E-stop #2 (rear-left)', 'CR-257R, head Ø39, neck Ø25.', 'RoboticsBD #1889', 'chk'); cyl('x', -P.SX - 1.5, 160, 259, 25, 3, M('yellow'), rearE, I); cyl('x', -P.SX - 6, 160, 259, 12.5, 10, M('#111'), rearE, I); cyl('x', -P.SX - 17, 160, 259, 19.5, 14, M('red'), rearE, I); })();
+[[-180, 'MAIN'], [-215, 'LOGIC']].forEach(([y, n]) => {
+  const I = info(`${n} toggle switch`, '6 A 125 VAC toggle, body 13 × 13 × 29 (page also 12 × 12 × 10), Ø12 bush.', 'RoboticsBD #1430', 'chk');
+  cyl('x', -P.SX - 2, y, 259, 7, 4, steel, gUpper, I);
+  const lev = new THREE.Mesh(new THREE.CylinderGeometry(2, 2.5, 18, 12), steel); lev.rotation.z = Math.PI / 2; lev.rotation.y = .4; lev.position.set(-P.SX - 10, y, 262); reg(lev, gUpper, I);
+});
+const vTex = canvasTex(256, 128, (c, w, h) => { c.fillStyle = '#0a0a0a'; c.fillRect(0, 0, w, h); c.fillStyle = '#ff3b30'; c.font = 'bold 64px monospace'; c.fillText('15.6', 18, 62); c.fillStyle = '#3b82f6'; c.font = 'bold 40px monospace'; c.fillText('2.41A', 60, 112); });
+const vm = new THREE.Mesh(new THREE.PlaneGeometry(46, 26), new THREE.MeshBasicMaterial({ map: vTex })); vm.rotation.set(Math.PI / 2, -Math.PI / 2, 0); vm.position.set(-P.SX - 2.2, -110, 259);
+reg(vm, gUpper, info('Voltmeter / ammeter', '0.28 in V/A meter with 100 A shunt. Module size and cut-out not listed: measure.', 'RoboticsBD #2677', 'meas'));
+box(-P.SX - 2, -P.SX, -134, -86, 245, 273, M('#111'), gUpper, vm.userData.info);
+// speaker grille + mic
+const spk = new THREE.Mesh(new THREE.CircleGeometry(25, 40), M('#0d0f12', { roughness: .9 })); spk.rotation.y = Math.PI / 2; spk.position.set(P.SX + 0.6, 0, 118); reg(spk, pFront, info('Speaker grille', '40 mm 3 W speaker behind a perforated grille, PAM8403 amp.', 'Proposal §1', 'design'));
+cyl('x', 362, 60, 276, 2, 4, M('#000'), gUpper, info('Microphone hole', 'Pinhole for the USB / MEMS mic.', 'Proposal §5', 'design'));
+// display (right wall)
+const dispCanvas = document.createElement('canvas'); dispCanvas.width = 480; dispCanvas.height = 320;
+const dispTex = new THREE.CanvasTexture(dispCanvas); dispTex.encoding = THREE.sRGBEncoding;
+const disp = new THREE.Mesh(new THREE.PlaneGeometry(73, 49), new THREE.MeshBasicMaterial({ map: dispTex }));
+disp.rotation.x = Math.PI / 2; disp.position.set(130, -P.SY - 5.2, 124);
+reg(disp, pRight, info('3.5 in status display', 'Battery %, charge state, task, IP, faults. HDMI + USB touch.', 'Proposal §5', 'design'));
+box(77, 183, -P.SY - 5, -P.SY, 85, 160, M('prt'), pRight, info('Display bezel', 'PETG bezel, window 76 × 52.', 'Proposal §4', 'design'));
+// Pi port cover (left wall)
+box(-180, -80, P.SY, P.SY + 8, 103, 167, M('prt'), pLeft, info('Pi 5 port cover', 'PETG, 100 × 64, closes the 64 × 30 service window; 4 × M3 into M3 rivet nuts. TPU grommet notch for a laptop cable.', 'Proposal §5', 'design'));
+[[-172, 159], [-88, 159], [-172, 111], [-88, 111]].forEach(([x, z]) => cyl('y', x, P.SY + 8.5, z, 2.8, 1.5, steel, pLeft, info('M3 screw', 'M3 button head into a rivet nut (4×).', 'Brief', 'design')));
+// charge funnel + contacts (rear)
+box(-P.SX - 4, -368, -60, 60, 70, 115, M('prt'), pRear, info('Charge funnel', 'PETG, 30° lead-in (±12 mm capture), 2 recessed female contacts 80 mm apart at z = 92.', 'Proposal §6', 'design'));
+box(-P.SX - 4.5, -P.SX + 8, -52, 52, 77, 108, M('#0f1114'), pRear, info('Funnel mouth', 'Lead-in opening.', 'Proposal §6', 'design'));
+[-40, 40].forEach(y => cyl('x', -P.SX + 6, y, 92, 6, 12, M('brass', { metalness: .9, roughness: .25 }), pRear, info('Female charge contact', 'Ø8 brass socket, recessed 8 mm (finger-safe). Diode + 15 A fuse → BMS.', 'Proposal §6', 'design')));
+// corner bumpers (TPU) on the chamfers
+const bumpMat = M('#1a1c1f', { roughness: .95 });
+[[pFR, 1], [pRR, 2], [pRL, 3], [pFL, 4]].forEach(([g, k]) => {
+  const idx = [1, 3, 5, 7][k - 1], p = shOuter[idx], q = shOuter[(idx + 1) % 8];
+  edgeBox(p, q, outwardNormal(p, q), 8, 42, 78, bumpMat, g, info('TPU corner bumper', 'Printed TPU cap over a micro limit switch (20 × 15 × 6).', 'RoboticsBD #1369', 'ok'), 8);
+});
+
+// ================================================================= LIGHT BARS
+const barMats = {};
+function lightBar(id, g, pts) {
+  const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#22c55e', emissiveIntensity: 1, roughness: .3 }); mat.userData.noClone = true; barMats[id] = mat;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p = pts[i], q = pts[i + 1], n = outwardNormal(p, q);
+    edgeBox(p, q, n, 5, 165, 180, mat, g, info(`Light bar ${id}`, 'WS2812B 30 LED/m (IP67) in a white PETG diffuser channel: front bars 7 LEDs, rear bars 6. One Mega pin, own 5 V 3 A buck, 40% brightness cap.', 'RoboticsBD #3860', 'chk'), 5);
+  }
+}
+const S = P.SX, Y = P.SY;
+lightBar('FL', pFL, [[S, Y - P.CH_F], [S - P.CH_F, Y], [S - P.CH_F - 100, Y]]);
+lightBar('FR', pFR, [[S, -Y + P.CH_F], [S - P.CH_F, -Y], [S - P.CH_F - 100, -Y]]);
+lightBar('RL', pRL, [[-S, Y - P.CH_R], [-S + P.CH_R, Y], [-S + P.CH_R + 100, Y]]);
+lightBar('RR', pRR, [[-S, -Y + P.CH_R], [-S + P.CH_R, -Y], [-S + P.CH_R + 100, -Y]]);
+// the outline is clockwise; for the FL/RL bars the outward normal flips, so recompute for those faces is handled by outwardNormal()
+
+// ================================================================= DOCK
+(function dock() {
+  const g = gDock.g, dm = M('dock', { roughness: .7 }), xf = -P.SX - 2;
+  const D = (n, s) => info(n, s, 'Proposal §6', 'design');
+  box(xf - 330, xf - 40, -220, 220, 0, 8, dm, g, D('Dock floor plate', 'Anti-slip plate, bolted to the floor.'));
+  [-1, 1].forEach(s => { const m = box(xf - 300, xf - 40, s * 150 - 6, s * 150 + 6, 8, 30, M('yellow'), g, D('V-guide rail', 'Guides the rear casters in the last 300 mm.')); m.rotation.z = -s * 0.12; });
+  box(xf - 60, xf - 10, -100, 100, 8, 350, dm, g, D('Dock tower', '350 mm tower, holds the charger, the relay and the ArUco plate.'));
+  box(xf - 10, xf, -70, 70, 60, 124, M('#1f2937'), g, D('Pin housing', 'Spring housing, 10 mm compliance.'));
+  [-40, 40].forEach(y => cyl('x', xf + 6, y, 92, 4, 22, M('brass', { metalness: .9, roughness: .25 }), g, D('Male charge pin', 'Ø8 brass, dead until a robot is sensed (ID resistor → relay).')));
+  const aru = canvasTex(256, 256, (c) => {
+    c.fillStyle = '#fff'; c.fillRect(0, 0, 256, 256); c.fillStyle = '#000'; c.fillRect(32, 32, 192, 192);
+    const bits = [[1, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1, 1], [0, 0, 1, 0]];
+    c.fillStyle = '#fff'; bits.forEach((r, i) => r.forEach((b, j) => { if (b) c.fillRect(64 + j * 32, 64 + i * 32, 32, 32); }));
+  });
+  const ar = new THREE.Mesh(new THREE.PlaneGeometry(150, 150), new THREE.MeshBasicMaterial({ map: aru }));
+  ar.rotation.set(Math.PI / 2, Math.PI / 2, 0); ar.position.set(xf - 9.4, 0, 259);
+  reg(ar, g, D('ArUco marker', 'DICT_4X4_50 id 0, 120 mm marker (150 mm plate) at z = 259, level with the rear camera. Pattern shown is illustrative.'));
+  box(xf - 330, xf - 200, 120, 210, 8, 90, M('#111827'), g, D('Charger box', '16.8 V 5 A CC/CV charger + dock MCU + relay.'));
+})();
+
+// ================================================================= LIDAR SCAN
+const scanG = new THREE.Group(); world.add(scanG);
+let usableDeg = 0;
+function buildScan() {
+  while (scanG.children.length) scanG.remove(scanG.children[0]);
+  const R = 1500, pos = [], posB = []; let free = 0;
+  for (let a = 0; a < 360; a += 0.5) {
+    const dx = Math.cos(a * Math.PI / 180), dy = Math.sin(a * Math.PI / 180); let t = R;
+    P.POSTS.forEach(([px, py]) => {      // slab test against 25 × 25 post
+      let t0 = -Infinity, t1 = Infinity;
+      [[dx, px], [dy, py]].forEach(([d, c]) => { if (Math.abs(d) < 1e-9) { if (Math.abs(c) > 12.5) t0 = Infinity; } else { let u = (c - 12.5) / d, v = (c + 12.5) / d; if (u > v) [u, v] = [v, u]; t0 = Math.max(t0, u); t1 = Math.min(t1, v); } });
+      if (t0 <= t1 && t0 > 0) t = Math.min(t, t0);
+    });
+    if (t >= R) free++;
+    if (t < R || Math.round(a * 2) % 6 === 0) (t >= R ? pos : posB).push(dx * 40, dy * 40, P.Z_SCAN, dx * t, dy * t, P.Z_SCAN);
+  }
+  usableDeg = free * 0.5;
+  const mk = (arr, col, op) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: op, depthWrite: false })); };
+  scanG.add(mk(pos, '#ef4444', .16)); scanG.add(mk(posB, '#111827', .7));
+  const disk = new THREE.Mesh(new THREE.RingGeometry(40, 1500, 96), new THREE.MeshBasicMaterial({ color: '#ef4444', transparent: true, opacity: .035, side: THREE.DoubleSide, depthWrite: false }));
+  disk.position.z = P.Z_SCAN; scanG.add(disk);
+  const sweepG = new THREE.BufferGeometry(); sweepG.setAttribute('position', new THREE.Float32BufferAttribute([40, 0, P.Z_SCAN, 1500, 0, P.Z_SCAN], 3));
+  const sweep = new THREE.Line(sweepG, new THREE.LineBasicMaterial({ color: '#dc2626' })); sweep.name = 'sweep'; scanG.add(sweep);
+}
+buildScan();
+
+// ================================================================= DIMENSIONS
+const dimG = new THREE.Group(); dimG.visible = false; world.add(dimG);
+function label(text, x, y, z, col = '#111827') {
+  const c = document.createElement('canvas'); const ctx = c.getContext('2d'); ctx.font = 'bold 44px Helvetica, Arial'; const w = ctx.measureText(text).width + 28; c.width = w; c.height = 64;
+  const g = c.getContext('2d'); g.fillStyle = 'rgba(255,255,255,.92)'; g.fillRect(0, 0, w, 64); g.font = 'bold 44px Helvetica, Arial'; g.fillStyle = col; g.textBaseline = 'middle'; g.fillText(text, 14, 34);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false })); s.scale.set(w * 0.55, 35, 1); s.position.set(x, y, z); s.renderOrder = 10; dimG.add(s);
+}
+function dline(pts, col = '#374151') { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts.flat(), 3)); dimG.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col, depthTest: false }))); }
+dline([[-P.SX, -P.SY - 70, 2], [P.SX, -P.SY - 70, 2], [-P.SX, -P.SY - 90, 2], [-P.SX, -P.SY - 50, 2], [P.SX, -P.SY - 90, 2], [P.SX, -P.SY - 50, 2]]);
+label('813 mm (32 in)', 0, -P.SY - 110, 4);
+dline([[P.SX + 70, -P.SY, 2], [P.SX + 70, P.SY, 2], [P.SX + 50, -P.SY, 2], [P.SX + 90, -P.SY, 2], [P.SX + 50, P.SY, 2], [P.SX + 90, P.SY, 2]]);
+label('584 mm (23 in)', P.SX + 170, 0, 4);
+const hx = -P.SX - 60, hy = P.SY + 60;
+dline([[hx, hy, 0], [hx, hy, 305]]);
+[[0, '0'], [40, '40 clearance'], [185, '185 lower bay'], [P.Z_SCAN, '213 scan plane'], [240, '240 band top'], [305, '305 deck']].forEach(([z, t]) => { dline([[hx - 15, hy, z], [hx + 15, hy, z]]); label(t, hx - 30, hy + 120, z, z === P.Z_SCAN ? '#dc2626' : '#111827'); });
+
+// ================================================================= UI
+const layersEl = document.getElementById('layers');
+Object.entries(LAYER).forEach(([id, L]) => {
+  const row = document.createElement('div'); row.className = 'row';
+  row.innerHTML = `<label><input type="checkbox" checked data-l="${id}"><span class="sw" style="background:${L.sw}"></span>${L.label}</label>`;
+  layersEl.appendChild(row);
+  row.querySelector('input').addEventListener('change', e => { L.g.visible = e.target.checked; });
+});
+function showLayer(id, on) { const el = document.querySelector(`[data-l="${id}"]`); el.checked = on; LAYER[id].g.visible = on; }
+showLayer('dock', false);
+document.getElementById('scan').addEventListener('change', e => scanG.visible = e.target.checked);
+document.getElementById('dims').addEventListener('change', e => dimG.visible = e.target.checked);
+document.getElementById('toggleUI').addEventListener('click', () => document.getElementById('ui').classList.toggle('hidden'));
+
+const steerEl = document.getElementById('steer');
+steerEl.addEventListener('input', () => { const a = +steerEl.value; document.getElementById('steerVal').textContent = a + '°'; steerGroups.forEach(g => g.rotation.z = a * Math.PI / 180); });
+
+function applyExplode(e) { explodeItems.forEach(it => it.obj.position.set(it.dir[0] * it.dist * e, it.dir[1] * it.dist * e, it.dir[2] * it.dist * e)); }
+document.getElementById('explode').addEventListener('input', e => applyExplode(+e.target.value));
+
+const shellOpacityTargets = () => { const s = []; gShell.traverse(o => { if (o.isMesh && o.material.userData.shell) s.push(o.material); }); return s; };
+document.getElementById('opacity').addEventListener('input', e => {
+  const v = +e.target.value; shellOpacityTargets().forEach(m => { m.transparent = v < 1; m.opacity = v; m.depthWrite = v >= 1; m.needsUpdate = true; });
+});
+
+document.getElementById('eng').addEventListener('change', e => {
+  engMode = e.target.checked;
+  const seen = new Set();
+  parts.forEach(p => { const m = p.material; if (!m || seen.has(m) || !m.userData || !m.userData.key) return; seen.add(m); if (!m.userData.real) m.userData.real = m.color.getHex(); const k = m.userData.key; if (engMode && ENG[k]) m.color.set(ENG[k]); else m.color.setHex(m.userData.real); });
+});
+
+document.getElementById('section').addEventListener('change', e => {
+  const on = e.target.checked, set = new Set();
+  [robot, gDock].forEach(r => r.traverse(o => { if (o.isMesh) set.add(o.material); }));
+  set.forEach(m => { m.clippingPlanes = on ? [clipPlane] : null; m.needsUpdate = true; });
+  if (on) setView('section');
+});
+
+// views
+const VIEWS = { iso: [1250, 820, -1150], front: [1700, 230, 0], left: [0, 230, -1750], rear: [-1700, 230, 0], right: [0, 230, 1750], top: [0, 2100, 1], section: [1250, 420, -380] };
+let camAnim = null;
+function setView(v) {
+  document.querySelectorAll('#views button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  const to = new THREE.Vector3(...VIEWS[v]); if (innerWidth < 760) to.multiplyScalar(1.5);
+  const ox = robot.position.x;
+  camAnim = { from: camera.position.clone(), to: to.add(new THREE.Vector3(ox, 0, 0)), tFrom: controls.target.clone(), tTo: new THREE.Vector3(ox, v === 'top' ? 0 : 150, 0), t: 0 };
+}
+document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => setView(b.dataset.v)));
+camera.position.set(...VIEWS.iso);
+
+// light-bar states
+let lightState = 'ready';
+document.getElementById('state').addEventListener('change', e => { lightState = e.target.value; drawDisplay(); });
+const COL = { green: '#22c55e', white: '#ffffff', red: '#ef4444', amber: '#f59e0b', blue: '#3b82f6', off: '#000000' };
+function setBar(id, col, k = 1) { const m = barMats[id]; m.emissive.set(col); m.emissiveIntensity = k; m.color.set(col === '#000000' ? '#9ca3af' : col); }
+function updateLights(t) {
+  const blink = Math.floor(t * 3) % 2 === 0, breathe = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2.4)), flash = Math.floor(t * 8) % 2 === 0;
+  const all = (c, k) => ['FL', 'FR', 'RL', 'RR'].forEach(i => setBar(i, c, k));
+  switch (lightState) {
+    case 'ready': all(COL.green, .55); break;
+    case 'forward': setBar('FL', COL.white, 1.2); setBar('FR', COL.white, 1.2); setBar('RL', COL.red, .45); setBar('RR', COL.red, .45); break;
+    case 'left': setBar('FL', blink ? COL.amber : COL.white, 1.1); setBar('RL', blink ? COL.amber : COL.red, blink ? 1.1 : .45); setBar('FR', COL.white, 1.2); setBar('RR', COL.red, .45); break;
+    case 'right': setBar('FR', blink ? COL.amber : COL.white, 1.1); setBar('RR', blink ? COL.amber : COL.red, blink ? 1.1 : .45); setBar('FL', COL.white, 1.2); setBar('RL', COL.red, .45); break;
+    case 'docking': setBar('FL', COL.red, .45); setBar('FR', COL.red, .45); setBar('RL', blink ? COL.amber : COL.white, 1.1); setBar('RR', blink ? COL.amber : COL.white, 1.1); break;
+    case 'charging': all(COL.blue, breathe); break;
+    case 'obstacle': all(COL.amber, 1); break;
+    case 'estop': all(flash ? COL.red : COL.off, flash ? 1.3 : 0); break;
+    case 'low': all(COL.red, 0.15 + 0.6 * (0.5 + 0.5 * Math.sin(t * 1.3))); break;
+  }
+}
+const STATE_TXT = { ready: ['READY', '#22c55e', 'Idle at waypoint'], forward: ['DRIVING', '#e5e7eb', 'Mission: station B'], left: ['TURN LEFT', '#f59e0b', 'Mission: station B'], right: ['TURN RIGHT', '#f59e0b', 'Mission: station B'], docking: ['DOCKING', '#f59e0b', 'ArUco id 0 locked'], charging: ['CHARGING', '#3b82f6', '16.8 V · 4.6 A in'], obstacle: ['SLOWING', '#f59e0b', 'Obstacle 0.6 m ahead'], estop: ['E-STOP', '#ef4444', 'Release e-stop to resume'], low: ['LOW BATTERY', '#ef4444', 'Return to dock'] };
+function drawDisplay() {
+  const c = dispCanvas.getContext('2d'), [t, col, sub] = STATE_TXT[lightState];
+  const pct = lightState === 'low' ? 17 : lightState === 'charging' ? 64 : 82;
+  c.fillStyle = '#0b1220'; c.fillRect(0, 0, 480, 320);
+  c.fillStyle = '#94a3b8'; c.font = '22px Helvetica, Arial'; c.fillText('ACI AMR-30 · 192.168.1.42', 20, 36);
+  c.fillStyle = col; c.font = 'bold 58px Helvetica, Arial'; c.fillText(t, 20, 118);
+  c.fillStyle = '#cbd5e1'; c.font = '24px Helvetica, Arial'; c.fillText(sub, 20, 160);
+  c.strokeStyle = '#e5e7eb'; c.lineWidth = 4; c.strokeRect(20, 200, 340, 70); c.fillRect(362, 220, 12, 30);
+  c.fillStyle = pct < 20 ? '#ef4444' : '#22c55e'; c.fillRect(28, 208, 324 * pct / 100, 54);
+  c.fillStyle = '#fff'; c.font = 'bold 34px Helvetica, Arial'; c.fillText(pct + '%', 390, 248);
+  dispTex.needsUpdate = true;
+}
+drawDisplay();
+
+// docking animation
+let dock = null;
+const START_OFF = 1100;
+document.getElementById('dockBtn').addEventListener('click', () => { showLayer('dock', true); dock = { t: 0, from: START_OFF, to: 0, dur: 7 }; robot.position.x = START_OFF; setState('docking'); setView('iso'); });
+document.getElementById('undockBtn').addEventListener('click', () => { dock = { t: 0, from: robot.position.x, to: START_OFF, dur: 4, undock: true }; setState('forward'); });
+function setState(s) { lightState = s; document.getElementById('state').value = s; drawDisplay(); }
+const arucoLineG = new THREE.BufferGeometry(); arucoLineG.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3));
+const arucoLine = new THREE.Line(arucoLineG, new THREE.LineDashedMaterial({ color: '#16a34a', dashSize: 20, gapSize: 12 })); arucoLine.visible = false; world.add(arucoLine);
+
+// stats
+function stats() {
+  document.getElementById('stats').innerHTML = `<span>Envelope <b>813 × 584 × 305 mm</b></span><span>Mass <b>≈ 46 kg</b> + 30 kg payload</span><span>LiDAR usable <b>${usableDeg.toFixed(0)}°</b> of 360°</span><span>Scan plane <b>z = ${P.Z_SCAN} mm</b></span><span>Parts <b>${parts.length}</b></span>`;
+}
+stats();
+
+// picking
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), tip = document.getElementById('tip'), infoEl = document.getElementById('info');
+let hovered = null, selected = null;
+function visibleChain(o) { while (o) { if (!o.visible) return false; o = o.parent; } return true; }
+function pick(ev) {
+  const r = renderer.domElement.getBoundingClientRect(); mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const sec = document.getElementById('section').checked;
+  const hits = ray.intersectObjects(parts, false).filter(h => visibleChain(h.object) && h.object.material.opacity > 0.2 && (!sec || h.point.x <= 0.5));
+  return hits.length ? hits[0].object : null;
+}
+function glow(o, on) { if (!o || !o.material || !o.material.emissive || Object.values(barMats).includes(o.material)) return; if (on) { o.userData.e = o.material.emissive.getHex(); o.material.emissive.set('#f59e0b'); o.material.emissiveIntensity = .35; } else { o.material.emissive.setHex(o.userData.e || 0); o.material.emissiveIntensity = 1; } }
+renderer.domElement.addEventListener('pointermove', ev => {
+  const o = pick(ev);
+  if (o !== hovered) { if (hovered && hovered !== selected) glow(hovered, false); hovered = o; if (o && o !== selected) glow(o, true); }
+  if (o) { tip.style.display = 'block'; tip.style.left = ev.clientX + 14 + 'px'; tip.style.top = ev.clientY + 12 + 'px'; tip.textContent = o.userData.info.name; renderer.domElement.style.cursor = 'pointer'; }
+  else { tip.style.display = 'none'; renderer.domElement.style.cursor = ''; }
+});
+const STATUS = { ok: ['Size from a drawing or clear listing', '#166534', '#dcfce7'], chk: ['Page conflicts or standard value used', '#92400e', '#fef3c7'], meas: ['Not listed: measure on arrival', '#991b1b', '#fee2e2'], design: ['Designed part (proposal)', '#1e40af', '#dbeafe'] };
+let downAt = null;
+renderer.domElement.addEventListener('pointerdown', ev => downAt = [ev.clientX, ev.clientY]);
+renderer.domElement.addEventListener('pointerup', ev => {
+  if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 4) return;
+  const o = pick(ev);
+  if (selected && selected !== o) glow(selected, false);
+  selected = o;
+  if (!o) { infoEl.innerHTML = '<div class="grp">Inspect</div><h3>Hover or click a part</h3><p class="hint">Drag to orbit · right-drag to pan · scroll to zoom.</p>'; return; }
+  glow(o, true);
+  const i = o.userData.info, st = STATUS[i.status] || STATUS.design;
+  let grp = ''; let p = o; while (p && !grp) { if (LAYER[p.name]) grp = LAYER[p.name].label; p = p.parent; }
+  infoEl.innerHTML = `<div class="grp">${grp}</div><h3>${i.name}</h3><p>${i.spec}</p><p class="src">Source: ${i.src}</p><p><span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;color:${st[1]};background:${st[2]}">${st[0]}</span></p>`;
+});
+
+// ---------------------------------------------------------------- loop
+const clock = new THREE.Clock();
+function ease(t) { return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+function loop() {
+  const dt = Math.min(clock.getDelta(), .05), t = clock.elapsedTime;
+  rotor.rotation.z += dt * 2 * Math.PI * 1.5;
+  const sw = scanG.getObjectByName('sweep'); if (sw) sw.rotation.z = rotor.rotation.z;
+  updateLights(t);
+  // wheel spin
+  let v = 0;
+  if (['forward', 'left', 'right'].includes(lightState)) v = 400;
+  if (dock && !dock.done) v = dock.undock ? 250 : -250;
+  wheelSpinners.forEach(w => w.g.rotation.y += dt * v / (P.WHL_D / 2));
+  if (dock) {
+    dock.t += dt; const k = Math.min(dock.t / dock.dur, 1), x = dock.from + (dock.to - dock.from) * ease(k);
+    robot.position.x = x; scanG.position.x = x;
+    arucoLine.visible = !dock.undock && k < 1;
+    if (arucoLine.visible) { const a = arucoLineG.attributes.position; a.setXYZ(0, x - P.SX - 12, 0, 259); a.setXYZ(1, -P.SX - 11.4, 0, 259); a.needsUpdate = true; arucoLine.computeLineDistances(); }
+    if (k >= 1) { if (!dock.undock) setState('charging'); dock = null; }
+  }
+  if (camAnim) {
+    camAnim.t = Math.min(camAnim.t + dt / .7, 1); const e = ease(camAnim.t);
+    camera.position.lerpVectors(camAnim.from, camAnim.to, e); controls.target.lerpVectors(camAnim.tFrom, camAnim.tTo, e);
+    if (camAnim.t >= 1) camAnim = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+// URL parameters, e.g. ?view=left&section=1&explode=0.6&opacity=0.3&steer=45&state=charging&dims=1&eng=1&hide=shell,dock
+(function urlParams() {
+  const q = new URLSearchParams(location.search), set = (id, v, ev) => { const el = document.getElementById(id); if (el.type === 'checkbox') el.checked = v; else el.value = v; el.dispatchEvent(new Event(ev)); };
+  if (q.has('explode')) set('explode', q.get('explode'), 'input');
+  if (q.has('opacity')) set('opacity', q.get('opacity'), 'input');
+  if (q.has('steer')) set('steer', q.get('steer'), 'input');
+  if (q.has('state')) set('state', q.get('state'), 'change');
+  ['section', 'dims', 'eng', 'scan'].forEach(k => { if (q.has(k)) set(k, q.get(k) === '1', 'change'); });
+  (q.get('hide') || '').split(',').filter(Boolean).forEach(id => { const el = document.querySelector(`[data-l="${id}"]`); if (el) { el.checked = false; el.dispatchEvent(new Event('change')); } });
+  if (q.has('view')) { setView(q.get('view')); camera.position.copy(camAnim.to); controls.target.copy(camAnim.tTo); camAnim = null; }
+})();
+loop();
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+</script>
+</body>
+</html>

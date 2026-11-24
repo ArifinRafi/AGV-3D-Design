@@ -1,0 +1,8 @@
+# Markdown and Claude files stay local
+*.md
+.claude/
+CLAUDE*
+
+# OS / Python clutter
+.DS_Store
+__pycache__/
